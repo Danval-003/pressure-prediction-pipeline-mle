@@ -69,14 +69,85 @@ def _prepare_deployment_sample(raw_df: pd.DataFrame, breaths: int) -> pd.DataFra
     return subset
 
 
+def _generate_sample_dataset(target: Path, breaths: int) -> None:
+    print(f"[pipeline] Generating sample dataset at {target} ({breaths} breaths).")
+    rows = []
+    idx = 0
+    breath_ids = range(breaths)
+    resistances = [5, 20, 50]
+    compliances = [10, 20, 50]
+
+    for b in breath_ids:
+        R = resistances[b % len(resistances)]
+        C = compliances[b % len(compliances)]
+        base_pressure = 5 + (b * 0.5)
+        for step in range(TIMESTEPS_PER_BREATH):
+            time_step = step * 0.033
+            u_in = max(0.0, min(100.0, (step / TIMESTEPS_PER_BREATH) * 80))
+            u_out = 1 if step > TIMESTEPS_PER_BREATH // 2 else 0
+            pressure = base_pressure + (u_in * 0.05) - (u_out * 0.5)
+            rows.append(
+                {
+                    "id": f"id_{idx}",
+                    "breath_id": b,
+                    "R": R,
+                    "C": C,
+                    "time_step": time_step,
+                    "u_in": u_in,
+                    "u_out": u_out,
+                    "pressure": pressure,
+                }
+            )
+            idx += 1
+
+    df = pd.DataFrame(rows)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(target, index=False)
+
+
+def _ensure_data_source(path: Path, sample_breaths: int) -> Path:
+    """
+    Garantiza que exista al menos un archivo de entrenamiento en `path`.
+    Si no se encuentra nada, genera un dataset sintético liviano.
+    """
+    def has_data_dir(directory: Path) -> bool:
+        if not directory.exists():
+            return False
+        if list(directory.glob("train_part_*.csv")):
+            return True
+        if (directory / "train.csv").exists():
+            return True
+        return False
+
+    if path.exists():
+        if path.is_file():
+            return path
+        if path.is_dir() and has_data_dir(path):
+            return path
+
+    # Si el path termina con extensión, asumimos archivo
+    if path.suffix:
+        target_file = path
+    else:
+        target_file = path / "train_part_sample.csv"
+
+    _generate_sample_dataset(target_file, breaths=sample_breaths)
+
+    # Si originalmente se apuntaba a un directorio, devolvemos el directorio
+    if not path.suffix:
+        return target_file.parent
+    return target_file
+
+
 def run_pipeline(args: argparse.Namespace) -> Dict[str, Any]:
     data_path = Path(args.data_path)
+    source_path = _ensure_data_source(data_path, args.sample_breaths)
     model_path = Path(args.model_path)
     artifacts_dir = _ensure_dir(Path(args.artifacts_dir))
     _ensure_dir(model_path.parent)
 
-    print(f"[pipeline] Loading data from {data_path} ...")
-    X, y, scaler, features = get_lstm_ready_xy(csv_path=data_path)
+    print(f"[pipeline] Loading data from {source_path} ...")
+    X, y, scaler, features = get_lstm_ready_xy(csv_path=source_path)
     X, y = _limit_breaths(X, y, args.max_breaths)
 
     train_size = args.train_size
@@ -110,7 +181,7 @@ def run_pipeline(args: argparse.Namespace) -> Dict[str, Any]:
     business_eval = check_business_criteria(metrics, group_rmse)
 
     print("[pipeline] Running deployment inference sample ...")
-    raw_df = load_raw_train_csv(csv_path=data_path)
+    raw_df = load_raw_train_csv(csv_path=source_path)
     deploy_df = _prepare_deployment_sample(raw_df, args.deploy_breaths)
     deployed_model = load_model(model_path)
     X_input, breath_ids, time_steps = preprocess_for_inference(deploy_df, scaler, features)
@@ -144,7 +215,7 @@ def parse_args() -> argparse.Namespace:
         "--data-path",
         type=str,
         default="/data/train_part_001.csv",
-        help="Ruta al archivo o carpeta con el dataset (por defecto /data/train_part_001.csv).",
+        help="Ruta al archivo o carpeta con el dataset. Si no existe, se generará uno sintético.",
     )
     parser.add_argument(
         "--model-path",
@@ -199,6 +270,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1e-3,
         help="Learning rate para el optimizador Adam.",
+    )
+    parser.add_argument(
+        "--sample-breaths",
+        type=int,
+        default=5,
+        help="Respiraciones sintéticas a generar si no hay dataset disponible.",
     )
     return parser.parse_args()
 

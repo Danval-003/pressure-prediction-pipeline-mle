@@ -76,7 +76,9 @@ levantar la app de Streamlit:
 - `docker/run_crispdm_pipeline.py` ejecuta las etapas de preparación,
   modelado, evaluación y genera predicciones de despliegue (`Deployment`).
   Se puede limitar el número de respiraciones (`--max-breaths`) para
-  mantener bajo el consumo de memoria/RAM.
+  mantener bajo el consumo de memoria/RAM. Si la ruta indicada en
+  `--data-path` no existe, se genera automáticamente un dataset sintético
+  muy pequeño (unos cuantos `breath_id`) para permitir pruebas rápidas.
 - `docker/entrypoint.sh` permite elegir el modo de ejecución vía la
   variable `SERVICE`:
   - `SERVICE=pipeline` (por defecto): corre el pipeline end-to-end.
