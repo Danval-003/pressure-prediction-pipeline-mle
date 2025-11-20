@@ -154,3 +154,12 @@ docker run --rm -p 8000:8000 \
 `DATA_PATH` debe apuntar a los fragmentos `train_part_*.csv` (o `train.csv`)
 para reconstruir el `scaler`. Ajusta `DEPLOY_BREATH_LIMIT` si necesitas
 procesar más respiraciones por request.
+
+## Documentación adicional
+
+Consulta la carpeta `docs/` para guías detalladas:
+
+- `docs/crispdm_packages.md` — estructura y flujo de los paquetes.
+- `docs/data_and_artifacts.md` — manejo de datos, splits y artefactos.
+- `docs/docker_pipeline.md` — imagen del pipeline y su configuración.
+- `docs/docker_serve_api.md` — imagen de servicio FastAPI.
