@@ -54,6 +54,9 @@ pip install -e packages/deployment
 - `.github/workflows/docker.yml` construye y publica la imagen Docker en
   Docker Hub (`docker.io/<usuario>/personal-asa-crispdm`) cada vez que se empuja a
   `main` o se crea un tag `crispdm-image-v*`.
+- `.github/workflows/docker-serve.yml` genera una imagen separada para
+  el servicio de inferencia (`docker.io/<usuario>/personal-asa-crispdm-serve`)
+  en los mismos disparadores (o tags `crispdm-serve-v*`).
 
 ## Flujo de versionamiento
 
@@ -112,3 +115,42 @@ docker run --rm -e SERVICE=streamlit -p 8501:8501 \
 > Nota: la imagen no incluye el dataset para evitar tamaños enormes. Es
 > necesario montar la carpeta `data/raw` (con `train.csv` o los
 > `train_part_*.csv`) dentro del contenedor.
+
+### Imagen de solo despliegue
+
+El `Dockerfile.serve` produce una imagen mínima que expone el modelo vía
+FastAPI (puerto `8000`):
+
+- Endpoint `GET /health` para comprobación básica.
+- Endpoint `POST /predict` con payload:
+
+```json
+{
+  "records": [
+    {
+      "breath_id": 1,
+      "R": 20,
+      "C": 50,
+      "time_step": 0.0,
+      "u_in": 0.0,
+      "u_out": 0
+    },
+    ...
+  ]
+}
+```
+
+Para usarlo:
+
+```bash
+docker run --rm -p 8000:8000 \
+  -e MODEL_PATH=/models/lstm_model.keras \
+  -e DATA_PATH=/data \
+  -v "$(pwd)/models":/models \
+  -v "$(pwd)/data/raw":/data \
+  docker.io/<usuario>/personal-asa-crispdm-serve:latest
+```
+
+`DATA_PATH` debe apuntar a los fragmentos `train_part_*.csv` (o `train.csv`)
+para reconstruir el `scaler`. Ajusta `DEPLOY_BREATH_LIMIT` si necesitas
+procesar más respiraciones por request.
