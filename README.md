@@ -76,8 +76,9 @@ levantar la app de Streamlit:
 - `docker/run_crispdm_pipeline.py` ejecuta las etapas de preparación,
   modelado, evaluación y genera predicciones de despliegue (`Deployment`).
   Se puede limitar el número de respiraciones (`--max-breaths`) para
-  mantener bajo el consumo de memoria/RAM. Si la ruta indicada en
-  `--data-path` no existe, se genera automáticamente un dataset sintético
+  mantener bajo el consumo de memoria/RAM. La imagen incluye los fragmentos
+  `data/raw/train_part_*.csv`, por lo que el pipeline funciona “out of the box”.
+  Si la ruta indicada en `--data-path` no existe, se genera automáticamente
   muy pequeño (unos cuantos `breath_id`) para permitir pruebas rápidas.
 - `docker/entrypoint.sh` permite elegir el modo de ejecución vía la
   variable `SERVICE`:
@@ -87,7 +88,10 @@ levantar la app de Streamlit:
 Ejemplos:
 
 ```bash
-# Pipeline (monta datos, modelos y artefactos desde el host)
+# Pipeline usando los datos incluidos en la imagen
+docker run --rm docker.io/<usuario>/personal-asa-crispdm:latest
+
+# Pipeline montando datos, modelos y artefactos desde el host
 docker run --rm \
   -e SERVICE=pipeline \
   -e DATA_PATH=/data/train_part_001.csv \
@@ -100,7 +104,7 @@ docker run --rm \
   --artifacts-dir /artifacts \
   --max-breaths 1500
 
-# Streamlit (EDA)
+# Streamlit (EDA) con los datos incluidos
 docker run --rm -e SERVICE=streamlit -p 8501:8501 \
   docker.io/<usuario>/personal-asa-crispdm:latest
 ```

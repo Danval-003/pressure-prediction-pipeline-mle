@@ -214,7 +214,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-path",
         type=str,
-        default="/data/train_part_001.csv",
+        default="/app/data/raw",
         help="Ruta al archivo o carpeta con el dataset. Si no existe, se generará uno sintético.",
     )
     parser.add_argument(
