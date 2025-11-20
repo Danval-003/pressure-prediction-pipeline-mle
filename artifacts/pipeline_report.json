@@ -1,0 +1,35 @@
+{
+  "data_path": "data\\raw\\train_part_001.csv",
+  "breaths_used": 200,
+  "train_size": 0.8,
+  "epochs": 1,
+  "batch_size": 32,
+  "metrics": {
+    "mse": 217.47085571289062,
+    "rmse": 14.746893086779012,
+    "mae": 11.792601585388184,
+    "rmse_mean": 13.882439613342285,
+    "rmse_std": 4.974804878234863
+  },
+  "group_rmse": {
+    "R": {
+      "0": 12.716546058654785,
+      "1": 14.022159576416016,
+      "2": 14.078950881958008
+    },
+    "C": {
+      "0": 14.840214729309082,
+      "1": 14.023492813110352,
+      "2": 12.186944961547852
+    }
+  },
+  "business_evaluation": {
+    "meets_rmse_target": false,
+    "max_gap_R": 1.3624048233032227,
+    "max_gap_C": 2.6532697677612305,
+    "has_strong_bias": true,
+    "overall_recommendation": "\u274c El modelo no alcanza el criterio m\u00ednimo de RMSE global. No se recomienda su despliegue en producci\u00f3n en el estado actual."
+  },
+  "model_path": "models\\lstm_docker.keras",
+  "predictions_path": "artifacts\\deployment_predictions.csv"
+}

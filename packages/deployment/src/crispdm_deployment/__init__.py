@@ -198,7 +198,17 @@ def predict_pressures(
         Predicciones de presión con shape (n_breaths, 80).
     """
     y_pred = model.predict(X_input, verbose=0)
-    y_pred = np.squeeze(y_pred)  # (n_breaths, 80)
+    y_pred = np.asarray(y_pred)
+
+    if y_pred.ndim == 3 and y_pred.shape[-1] == 1:
+        y_pred = y_pred[:, :, 0]
+    elif y_pred.ndim == 1:
+        # Única respiración con vector 1D -> restaurar a (1, 80)
+        y_pred = y_pred.reshape(1, -1)
+
+    if y_pred.ndim != 2:
+        raise ValueError(f"Shape inesperado para predicciones: {y_pred.shape}")
+
     return y_pred
 
 

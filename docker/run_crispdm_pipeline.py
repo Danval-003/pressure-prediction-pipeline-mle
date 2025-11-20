@@ -33,6 +33,41 @@ from crispdm_deployment import (
 )
 
 
+def _json_default(obj):
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, (np.ndarray,)):
+        return obj.tolist()
+    return str(obj)
+
+
+def _sanitize_for_json(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        sanitized = {}
+        for key, value in obj.items():
+            if isinstance(key, (str, int, float, bool)) or key is None:
+                new_key = key
+            elif isinstance(key, (np.integer,)):
+                new_key = int(key)
+            elif isinstance(key, (np.floating,)):
+                new_key = float(key)
+            else:
+                new_key = str(key)
+            sanitized[new_key] = _sanitize_for_json(value)
+        return sanitized
+    if isinstance(obj, list):
+        return [_sanitize_for_json(item) for item in obj]
+    if isinstance(obj, tuple):
+        return [_sanitize_for_json(item) for item in obj]
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.integer, np.floating)):
+        return _json_default(obj)
+    return obj
+
+
 def _ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -202,10 +237,12 @@ def run_pipeline(args: argparse.Namespace) -> Dict[str, Any]:
         "model_path": str(model_path),
         "predictions_path": str(predictions_path),
     }
-    (artifacts_dir / "pipeline_report.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    serializable_summary = _sanitize_for_json(summary)
+    summary_json = json.dumps(serializable_summary, indent=2)
+    (artifacts_dir / "pipeline_report.json").write_text(summary_json, encoding="utf-8")
 
     print("[pipeline] Completed. Summary:")
-    print(json.dumps(summary, indent=2))
+    print(summary_json)
     return summary
 
 
