@@ -63,7 +63,7 @@ def _prepare_deployment_sample(raw_df: pd.DataFrame, breaths: int) -> pd.DataFra
     unique_ids = raw_df["breath_id"].unique()
     selected = unique_ids[:breaths]
     subset = raw_df[raw_df["breath_id"].isin(selected)].copy()
-    if subset.empty():
+    if subset.empty:
         raise ValueError("No rows selected for deployment inference. "
                          "Check that the dataset contains enough breaths.")
     return subset
