@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crispdm-evaluating"
+version = "0.1.0"
+description = "Business-focused evaluation logic for the CRISP-DM Evaluation stage."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Personal ASA" },
+]
+keywords = ["crisp-dm", "evaluation", "monitoring"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.24",
+    "tensorflow>=2.10",
+    "scikit-learn>=1.2",
+    "crispdm-data-preparation>=0.1.0",
+    "crispdm-modeling>=0.1.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

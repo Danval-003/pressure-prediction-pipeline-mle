@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crispdm-data-preparation"
+version = "0.1.0"
+description = "CRISP-DM data preparation utilities for the ventilator pressure project."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Personal ASA" },
+]
+keywords = ["crisp-dm", "data-preparation", "ventilator"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=1.5",
+    "scikit-learn>=1.2",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crispdm-deployment"
+version = "0.1.0"
+description = "Inference helpers and preprocessing for the CRISP-DM Deployment stage."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Personal ASA" },
+]
+keywords = ["crisp-dm", "deployment", "inference"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=1.5",
+    "tensorflow>=2.10",
+    "crispdm-data-preparation>=0.1.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
