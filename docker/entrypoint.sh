@@ -13,7 +13,7 @@ case "$SERVICE" in
     ;;
   streamlit)
     PORT="${PORT:-8501}"
-    exec streamlit run data_understanding_app.py --server.port "${PORT}" --server.address 0.0.0.0 "$@"
+    exec uvicorn docker.serve_api:app --host 0.0.0.0 --port "${PORT}" "$@"
     ;;
   bash)
     exec bash "$@"

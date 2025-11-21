@@ -62,4 +62,4 @@ VOLUME ["/data", "/models", "/artifacts"]
 
 EXPOSE 8501
 
-CMD ["uvicorn", "docker.serve_api:app", "--host", "0.0.0.0", "--port", "8501"]
+ENTRYPOINT ["bash", "docker/entrypoint.sh"]

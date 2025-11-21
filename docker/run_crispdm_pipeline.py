@@ -294,7 +294,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model-path",
         type=str,
-        default="models/lstm_docker.keras",
+        default="models/lstm_model.keras",
         help="Ruta donde se guardará el modelo entrenado.",
     )
     parser.add_argument(
