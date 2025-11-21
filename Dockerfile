@@ -32,5 +32,5 @@ EXPOSE 8501
 
 # docker\serve_api.py use uvicorn to serve the FastAPI app
 # Install uvicorn in the base image to avoid multiple installations
-RUN pip install --no-cache-dir uvicorn[standard]==0.30.0 && pip cache purge
+RUN pip install --no-cache-dir fastapi uvicorn[standard]==0.30.0 && pip cache purge 
 RUN uvicorn docker/serve_api:app --host 0.0.0.0 --port 8501
