@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Tuple, List
 
@@ -13,10 +12,16 @@ TIMESTEPS_PER_BREATH = 80
 DEFAULT_TRAIN_PATH = Path("data/raw")
 TRAIN_PART_PATTERN = "train_part_*.csv"
 
-# URL base opcional para descargar datos desde GitHub (raw)
+# Número de fragmentos train_part_XXX.csv en GitHub
+REMOTE_TRAIN_PART_COUNT = 21
+
+# URL base para descargar datos desde GitHub (raw)
 # Ejemplo:
-#   GITHUB_DATA_BASE_URL="https://raw.githubusercontent.com/USER/REPO/BRANCH/data/raw"
-GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/Danval-003/pressure-prediction-pipeline-mle/refs/heads/main/data/raw"
+#   https://raw.githubusercontent.com/USER/REPO/BRANCH/data/raw
+GITHUB_DATA_BASE_URL = (
+    "https://raw.githubusercontent.com/Danval-003/pressure-prediction-pipeline-mle"
+    "/refs/heads/main/data/raw"
+).rstrip("/")
 
 
 # ============================================================
@@ -41,13 +46,11 @@ def download_file(url: str, dest: Path, chunk_size: int = 1_048_576) -> Path:
 def _remote_file_url(filename: str) -> str:
     """
     Construye la URL remota para un archivo dado su nombre.
-    Requiere que GITHUB_DATA_BASE_URL esté configurada.
     """
     if not GITHUB_DATA_BASE_URL:
         raise FileNotFoundError(
             f"No se encontró el archivo '{filename}' localmente y "
-            "GITHUB_DATA_BASE_URL no está configurada. "
-            "Define la variable de entorno o coloca los datos en data/raw."
+            "GITHUB_DATA_BASE_URL no está configurada."
         )
     return f"{GITHUB_DATA_BASE_URL}/{filename}"
 
@@ -56,13 +59,36 @@ def _ensure_local_file(path: Path) -> Path:
     """
     Garantiza que el archivo exista localmente.
     - Si existe, lo devuelve.
-    - Si no existe y GITHUB_DATA_BASE_URL está configurada, lo descarga.
+    - Si no existe y hay URL remota, lo descarga.
     """
     if path.exists():
         return path
 
     url = _remote_file_url(path.name)
-    return download_file(url, path)
+    try:
+        return download_file(url, path)
+    except requests.HTTPError as err:
+        # Lo convertimos a FileNotFoundError para poder manejarlo arriba
+        raise FileNotFoundError(f"No se pudo descargar {url}: {err}") from err
+
+
+def _download_remote_train_parts(directory: Path) -> List[Path]:
+    """
+    Descarga secuencialmente train_part_001.csv ... train_part_NNN.csv
+    al directorio `directory` y devuelve la lista de Paths locales.
+    """
+    if not GITHUB_DATA_BASE_URL:
+        return []
+
+    parts: List[Path] = []
+    for idx in range(1, REMOTE_TRAIN_PART_COUNT + 1):
+        filename = f"train_part_{idx:03d}.csv"
+        local_path = directory / filename
+        print(f"[load] Asegurando fragmento remoto: {filename}")
+        path = _ensure_local_file(local_path)
+        parts.append(path)
+
+    return parts
 
 
 # ============================================================
@@ -87,14 +113,14 @@ def reduce_memory_usage(df: pd.DataFrame) -> pd.DataFrame:
             if str(col_type)[:3] == "int":
                 if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
                     df[col] = df[col].astype(np.int8)
-                elif c_min > np.iinfo(np.int16).min and c_max < np.int16(c_max).max:
+                elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
                     df[col] = df[col].astype(np.int16)
                 elif c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
                     df[col] = df[col].astype(np.int32)
                 else:
                     df[col] = df[col].astype(np.int64)
             else:
-                # 👇 AQUÍ el cambio importante: solo float32 / float64, NADA de float16
+                # 👇 SOLO float32 / float64, NADA de float16
                 if c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
                     df[col] = df[col].astype(np.float32)
                 else:
@@ -115,11 +141,7 @@ def reduce_memory_usage(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Misma lógica que add_features(df) en el notebook:
-      - u_in_cumsum, area, area_cumsum
-      - lags de u_in, R, C
-      - diffs de time_step, u_in, R, C
-      - rolling mean/std (ventana=3) de u_in, R, C
+    Misma lógica que add_features(df) en el notebook.
     """
     df = df.copy()
 
@@ -153,7 +175,7 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ============================================================
-#   Carga cruda de train.csv (local + opción GitHub)
+#   Carga cruda de train.csv (local + opción GitHub multi-part)
 # ============================================================
 
 def _resolve_train_files(csv_path: Path) -> List[Path]:
@@ -163,38 +185,56 @@ def _resolve_train_files(csv_path: Path) -> List[Path]:
       - Directorio que contenga fragmentos ``train_part_*.csv``
       - Directorio que contenga un ``train.csv``
 
-    Si los archivos no existen localmente y GITHUB_DATA_BASE_URL está
-    configurada, los descarga desde esa URL base.
+    Si no hay nada local pero hay GITHUB_DATA_BASE_URL:
+      - Descarga secuencialmente train_part_001.csv ... train_part_NNN.csv
+        al directorio indicado.
+      - Si no hay fragments remotos (y existiera un train.csv remoto), usaría train.csv.
     """
-    # Caso 1: csv_path es un directorio (ej. data/raw)
-    if csv_path.is_dir():
-        # Intentar fragmentos: train_part_*.csv
-        part_files = sorted(csv_path.glob(TRAIN_PART_PATTERN))
-        if part_files:
-            return [_ensure_local_file(p) for p in part_files]
-
-        # Intentar train.csv
-        single = csv_path / "train.csv"
-        try:
-            single = _ensure_local_file(single)
-            return [single]
-        except FileNotFoundError:
-            pass
-
-    # Caso 2: ruta apunta a archivo específico
+    # Caso 1: ruta es un archivo concreto (data/raw/train_part_005.csv, etc.)
     if csv_path.is_file():
         return [_ensure_local_file(csv_path)]
 
-    # Caso 3: ruta puede ser algo como "data/raw/train.csv" inexistente
-    parent = csv_path.parent if csv_path.suffix else csv_path
-    part_files = sorted(parent.glob(TRAIN_PART_PATTERN))
-    if part_files:
-        return [_ensure_local_file(p) for p in part_files]
+    # Vamos a tratar csv_path como directorio lógico (aunque aún no exista)
+    # - Si es directorio existente, buscamos cosas locales
+    # - Si no existe pero hay URL remota, lo usamos como destino de descargas
+    directory = csv_path
 
-    # Probar un train.csv genérico en ese directorio
-    single = parent / "train.csv"
-    single = _ensure_local_file(single)
-    return [single]
+    # Si tiene sufijo pero NO es archivo (ej. 'data/raw/train.csv' inexistente),
+    # usamos el padre como directorio.
+    if csv_path.suffix and not csv_path.is_dir():
+        directory = csv_path.parent
+
+    # 1) Preferir datos locales si el directorio existe
+    if directory.exists():
+        part_files = sorted(directory.glob(TRAIN_PART_PATTERN))
+        if part_files:
+            print(f"[load] Detectados {len(part_files)} fragmentos locales en {directory}")
+            return part_files
+
+        single = directory / "train.csv"
+        if single.exists():
+            print(f"[load] Detectado train.csv local en {single}")
+            return [single]
+
+    # 2) Sin datos locales, intentar remotos si hay URL base
+    if GITHUB_DATA_BASE_URL:
+        print(f"[load] No hay datos locales en {directory}. Intentando descargar fragmentos remotos...")
+        remote_parts = _download_remote_train_parts(directory)
+        if remote_parts:
+            print(f"[load] Descargados {len(remote_parts)} fragmentos remotos.")
+            return remote_parts
+
+        # Como último recurso, intentar un train.csv remoto (si existiera)
+        single = directory / "train.csv"
+        single = _ensure_local_file(single)
+        return [single]
+
+    # 3) Sin datos locales y sin URL remota -> error
+    raise FileNotFoundError(
+        "No se encontraron archivos de entrenamiento en "
+        f"{csv_path}. Asegúrate de tener 'train.csv' o archivos "
+        f"{TRAIN_PART_PATTERN} en el directorio, o configurar GITHUB_DATA_BASE_URL."
+    )
 
 
 def load_raw_train_csv(csv_path: Path | str = DEFAULT_TRAIN_PATH) -> pd.DataFrame:
@@ -204,14 +244,9 @@ def load_raw_train_csv(csv_path: Path | str = DEFAULT_TRAIN_PATH) -> pd.DataFram
     Comportamiento:
       - Si los archivos existen localmente, se usan directamente.
       - Si no existen y GITHUB_DATA_BASE_URL está configurada,
-        se descargan desde esa URL base (usando solo el nombre del archivo).
+        se descargan TODOS los fragmentos train_part_XXX.csv uno por uno
+        al directorio especificado y se cargan desde allí.
       - Si no existen y no hay URL remota, lanza FileNotFoundError.
-
-    Parámetros
-    ----------
-    csv_path : Path | str
-        Ruta al archivo o directorio con los fragmentos.
-        Por defecto: data/raw/ (busca train_part_*.csv o train.csv)
     """
     csv_path = Path(csv_path)
     files = _resolve_train_files(csv_path)
@@ -225,7 +260,8 @@ def load_raw_train_csv(csv_path: Path | str = DEFAULT_TRAIN_PATH) -> pd.DataFram
     frames = []
     for file_path in files:
         print(f"        - {file_path.name}")
-        frames.append(pd.read_csv(file_path))
+        chunk = pd.read_csv(file_path)
+        frames.append(chunk)
     df = pd.concat(frames, ignore_index=True)
     return df
 
@@ -238,17 +274,9 @@ def get_preprocessed_dataframe(
     csv_path: Path | str = DEFAULT_TRAIN_PATH,
 ) -> pd.DataFrame:
     """
-    Devuelve un DataFrame con el MISMO preprocesamiento del cuadernito:
-
-      1) load_raw_train_csv (local + opcional descarga remota)
-      2) reduce_memory_usage
-      3) drop 'id'
-      4) add_features
-      5) fillna(0)
-      6) map de R y C a {0,1,2}
-      7) ordenar por ['breath_id', 'time_step']
+    Devuelve un DataFrame con el MISMO preprocesamiento del cuadernito.
     """
-    # 1) Carga cruda
+    # 1) Carga cruda (local o remota multi-part)
     df = load_raw_train_csv(csv_path=csv_path)
 
     # 2) Optimización de memoria
@@ -281,12 +309,7 @@ def get_lstm_ready_xy(
     csv_path: Path | str = DEFAULT_TRAIN_PATH,
 ) -> Tuple[np.ndarray, np.ndarray, RobustScaler, List[str]]:
     """
-    Devuelve X, y, scaler, features exactamente como en el notebook para el LSTM:
-
-      - y: (num_breaths, 80) con la presión
-      - X: (num_breaths, 80, num_features) con features escaladas
-      - scaler: RobustScaler ya fit
-      - features: nombres de las columnas usadas como features
+    Devuelve X, y, scaler, features exactamente como en el notebook para el LSTM.
     """
     df = get_preprocessed_dataframe(csv_path=csv_path)
 

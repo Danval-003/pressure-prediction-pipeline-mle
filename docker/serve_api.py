@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -10,41 +11,68 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from tensorflow.keras.models import load_model
+from joblib import load as joblib_load
 
-from crispdm_data_preparation import get_lstm_ready_xy
 from crispdm_deployment import (
     preprocess_for_inference,
     predict_pressures,
     build_predictions_dataframe,
 )
 
-
-DATA_PATH = Path(os.environ.get("DATA_PATH", "/app/data/raw"))
+# Paths configurables por variables de entorno
 MODEL_PATH = Path(os.environ.get("MODEL_PATH", "/models/lstm_model.keras"))
+SCALER_PATH = Path(os.environ.get("SCALER_PATH", "/models/scaler.joblib"))
+FEATURES_PATH = Path(os.environ.get("FEATURES_PATH", "/models/features.json"))
+
+# Límite de respiraciones por request (para proteger memoria)
 DEPLOY_BREATH_LIMIT = int(os.environ.get("DEPLOY_BREATH_LIMIT", "512"))
 
 
 def _load_artifacts():
+    """Carga modelo, scaler y features desde disco."""
     if not MODEL_PATH.exists():
         raise FileNotFoundError(
             f"No se encontró el modelo en {MODEL_PATH}. "
             "Monta la carpeta 'models' con el archivo .keras entrenado."
         )
 
+    if not SCALER_PATH.exists():
+        raise FileNotFoundError(
+            f"No se encontró el scaler en {SCALER_PATH}. "
+            "Asegúrate de que el pipeline haya guardado 'scaler.joblib'."
+        )
+
+    if not FEATURES_PATH.exists():
+        raise FileNotFoundError(
+            f"No se encontró el archivo de features en {FEATURES_PATH}. "
+            "Asegúrate de que el pipeline haya guardado 'features.json'."
+        )
+
     print(f"[serve] Cargando modelo desde {MODEL_PATH}")
     model = load_model(MODEL_PATH)
 
-    print(f"[serve] Reconstruyendo scaler/features desde {DATA_PATH} ...")
-    _, _, scaler, features = get_lstm_ready_xy(csv_path=DATA_PATH)
+    print(f"[serve] Cargando scaler desde {SCALER_PATH}")
+    scaler = joblib_load(SCALER_PATH)
 
+    print(f"[serve] Cargando lista de features desde {FEATURES_PATH}")
+    features_text = FEATURES_PATH.read_text(encoding="utf-8")
+    features = json.loads(features_text)
+
+    if not isinstance(features, list):
+        raise ValueError(
+            f"El archivo {FEATURES_PATH} no contiene una lista de features válida."
+        )
+
+    print(f"[serve] Artefactos listos. Número de features: {len(features)}")
     return model, scaler, features
 
 
+# Cargamos una sola vez, al levantar el proceso
 MODEL, SCALER, FEATURES = _load_artifacts()
 
 app = FastAPI(
     title="CRISP-DM Ventilator Pressure - Deployment API",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
@@ -68,10 +96,14 @@ class PredictionRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
+    """Endpoint simple para verificar que el servicio está vivo."""
     return {
         "status": "ok",
         "model_path": str(MODEL_PATH),
-        "data_path": str(DATA_PATH),
+        "scaler_path": str(SCALER_PATH),
+        "features_path": str(FEATURES_PATH),
+        "deploy_breath_limit": DEPLOY_BREATH_LIMIT,
+        "num_features": len(FEATURES),
     }
 
 
@@ -80,20 +112,35 @@ def predict(req: PredictionRequest) -> dict:
     if not req.records:
         raise HTTPException(status_code=400, detail="No se recibieron registros.")
 
+    # Convertir a DataFrame
     df = pd.DataFrame([record.dict() for record in req.records])
+
+    # Validar número de respiraciones
+    if "breath_id" not in df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail="Falta la columna 'breath_id' en los registros.",
+        )
 
     breath_ids = df["breath_id"].nunique()
     if breath_ids > DEPLOY_BREATH_LIMIT:
         raise HTTPException(
             status_code=400,
-            detail=f"Se recibieron {breath_ids} respiraciones; el máximo permitido es {DEPLOY_BREATH_LIMIT}.",
+            detail=(
+                f"Se recibieron {breath_ids} respiraciones; "
+                f"el máximo permitido es {DEPLOY_BREATH_LIMIT}."
+            ),
         )
 
     try:
-        X_input, breath_matrix, time_matrix = preprocess_for_inference(df, SCALER, FEATURES)
+        # Mismo preprocesamiento que en entrenamiento, pero usando el scaler ya entrenado
+        X_input, breath_matrix, time_matrix = preprocess_for_inference(
+            df, SCALER, FEATURES
+        )
         preds = predict_pressures(MODEL, X_input)
         pred_df = build_predictions_dataframe(preds, breath_matrix, time_matrix)
     except Exception as exc:  # noqa: BLE001
+        # En producción podrías loggear `exc` con más detalle
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return {
