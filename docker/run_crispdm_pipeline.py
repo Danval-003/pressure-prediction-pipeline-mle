@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -76,8 +77,10 @@ def _ensure_dir(path: Path) -> Path:
 def _limit_breaths(X: np.ndarray, y: np.ndarray, limit: int | None) -> tuple[np.ndarray, np.ndarray]:
     if limit is None or X.shape[0] <= limit:
         return X, y
-    print(f"[pipeline] Limiting dataset to the first {limit} breaths "
-          f"instead of {X.shape[0]} for a lighter run.")
+    print(
+        f"[pipeline] Limiting dataset to the first {limit} breaths "
+        f"instead of {X.shape[0]} for a lighter run."
+    )
     return X[:limit], y[:limit]
 
 
@@ -99,8 +102,10 @@ def _prepare_deployment_sample(raw_df: pd.DataFrame, breaths: int) -> pd.DataFra
     selected = unique_ids[:breaths]
     subset = raw_df[raw_df["breath_id"].isin(selected)].copy()
     if subset.empty:
-        raise ValueError("No rows selected for deployment inference. "
-                         "Check that the dataset contains enough breaths.")
+        raise ValueError(
+            "No rows selected for deployment inference. "
+            "Check that the dataset contains enough breaths."
+        )
     return subset
 
 
@@ -142,9 +147,19 @@ def _generate_sample_dataset(target: Path, breaths: int) -> None:
 
 def _ensure_data_source(path: Path, sample_breaths: int) -> Path:
     """
-    Garantiza que exista al menos un archivo de entrenamiento en `path`.
-    Si no se encuentra nada, genera un dataset sintético liviano.
+    Garantiza que exista una fuente de datos utilizable.
+
+    Estrategia:
+      1. Si existe dataset local (archivo o carpeta con train.csv / train_part_*.csv), se usa.
+      2. Si NO existe dataset local pero está configurado GITHUB_DATA_BASE_URL,
+         se asume que crispdm_data_preparation se encargará de descargar los datos
+         remotos (no se genera nada sintético).
+      3. Si no hay datos locales NI remotos configurados, se genera un dataset
+         sintético liviano para poder ejecutar la tubería.
     """
+
+    github_base = "https://raw.githubusercontent.com/Danval-003/pressure-prediction-pipeline-mle/refs/heads/main/data/raw"
+
     def has_data_dir(directory: Path) -> bool:
         if not directory.exists():
             return False
@@ -154,11 +169,28 @@ def _ensure_data_source(path: Path, sample_breaths: int) -> Path:
             return True
         return False
 
+    # 1) Datos locales existentes
     if path.exists():
         if path.is_file():
             return path
         if path.is_dir() and has_data_dir(path):
             return path
+
+    # 2) No hay datos locales, pero sí fuente remota -> la lógica de descarga
+    #    (load_raw_train_csv / get_lstm_ready_xy) se encargará usando la ruta.
+    if github_base:
+        print(
+            "[pipeline] No local data found at "
+            f"{path}, but GITHUB_DATA_BASE_URL is set. "
+            "Remote data will be used when loading."
+        )
+        return path
+
+    # 3) Sin datos locales ni remotos: generar dataset sintético pequeño
+    print(
+        "[pipeline] No local data found and GITHUB_DATA_BASE_URL is not set. "
+        "Generating a small synthetic dataset to proceed."
+    )
 
     # Si el path termina con extensión, asumimos archivo
     if path.suffix:
@@ -252,7 +284,12 @@ def parse_args() -> argparse.Namespace:
         "--data-path",
         type=str,
         default="/app/data/raw",
-        help="Ruta al archivo o carpeta con el dataset. Si no existe, se generará uno sintético.",
+        help=(
+            "Ruta al archivo o carpeta con el dataset. "
+            "Si no existe pero está configurado GITHUB_DATA_BASE_URL, "
+            "se usarán datos remotos. Si no hay datos ni remotos ni locales, "
+            "se generará un dataset sintético pequeño."
+        ),
     )
     parser.add_argument(
         "--model-path",

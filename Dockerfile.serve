@@ -24,8 +24,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 RUN chmod +x docker/entrypoint_serve.sh
 
-VOLUME ["/data"]
-
 EXPOSE 8000
 
-ENTRYPOINT ["bash", "docker/entrypoint_serve.sh"]
+CMD ["uvicorn", "docker.serve_api:app", "--host", "0.0.0.0", "--port", "8000"]

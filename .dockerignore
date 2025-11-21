@@ -9,4 +9,5 @@ __pycache__
 artifacts/*
 dist
 build
+/data
 *.egg-info
