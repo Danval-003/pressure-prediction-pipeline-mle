@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 RUN chmod +x docker/entrypoint_serve.sh
 
-VOLUME ["/data", "/models"]
+VOLUME ["/data"]
 
 EXPOSE 8000
 
