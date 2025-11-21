@@ -3,14 +3,7 @@ name: release
 on:
   push:
     tags:
-      - data-preparation-v*
-      - data_preparation-v*
-      - data-understanding-v*
-      - data_understanding-v*
-      - modeling-v*
-      - evaluating-v*
-      - deployment-v*
-  workflow_dispatch:
+      - v* # Ej: v0.1.0, v0.2.0, etc.
 
 permissions:
   contents: write
@@ -20,47 +13,24 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+
+    strategy:
+      matrix:
+        include:
+          - package: data_preparation
+            dist: crispdm-data-preparation
+          - package: data_understanding
+            dist: crispdm-data-understanding
+          - package: modeling
+            dist: crispdm-modeling
+          - package: evaluating
+            dist: crispdm-evaluating
+          - package: deployment
+            dist: crispdm-deployment
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Detect package metadata
-        id: meta
-        shell: bash
-        run: |
-          tag="${GITHUB_REF_NAME}"
-          case "$tag" in
-            data-preparation-v*|data_preparation-v*)
-              package="data_preparation"
-              dist="crispdm-data-preparation"
-              ;;
-            data-understanding-v*|data_understanding-v*)
-              package="data_understanding"
-              dist="crispdm-data-understanding"
-              ;;
-            modeling-v*)
-              package="modeling"
-              dist="crispdm-modeling"
-              ;;
-            evaluating-v*)
-              package="evaluating"
-              dist="crispdm-evaluating"
-              ;;
-            deployment-v*)
-              package="deployment"
-              dist="crispdm-deployment"
-              ;;
-            *)
-              echo "Unsupported tag $tag" >&2
-              exit 1
-              ;;
-          esac
-
-          version="${tag##*-v}"
-          echo "package=$package" >> "$GITHUB_OUTPUT"
-          echo "package_dir=packages/$package" >> "$GITHUB_OUTPUT"
-          echo "dist=$dist" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -70,32 +40,43 @@ jobs:
       - name: Install build & release tooling
         run: python -m pip install --upgrade pip build twine
 
+      - name: Detect tag version
+        id: meta
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"     # Ej: v0.1.0
+          version="${tag#v}"           # -> 0.1.0
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "package_dir=packages/${{ matrix.package }}" >> "$GITHUB_OUTPUT"
+
       - name: Verify tag matches package version
         shell: bash
         env:
           PACKAGE_DIR: ${{ steps.meta.outputs.package_dir }}
           TAG_VERSION: ${{ steps.meta.outputs.version }}
         run: |
+          echo "Verificando versión en $PACKAGE_DIR contra tag $TAG_VERSION"
           declared="$(python - <<'PY'
-import os
-import pathlib
-import tomllib
+          import os
+          import pathlib
+          import tomllib
 
-pyproject = pathlib.Path(os.environ["PACKAGE_DIR"]) / "pyproject.toml"
-data = tomllib.loads(pyproject.read_text())
-print(data["project"]["version"])
-PY
-)"
+          pyproject = pathlib.Path(os.environ["PACKAGE_DIR"]) / "pyproject.toml"
+          data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+          print(data["project"]["version"])
+          PY
+          )"
+          echo "pyproject version = $declared"
           if [ "$declared" != "$TAG_VERSION" ]; then
-            echo "Version mismatch: tag=$TAG_VERSION pyproject=$declared" >&2
+            echo "Version mismatch for $PACKAGE_DIR: tag=$TAG_VERSION pyproject=$declared" >&2
             exit 1
           fi
 
-      - name: Build ${{ steps.meta.outputs.dist }}
+      - name: Build ${{ matrix.dist }}
         working-directory: ${{ steps.meta.outputs.package_dir }}
         run: python -m build
 
-      - name: Publish ${{ steps.meta.outputs.dist }} to PyPI
+      - name: Publish ${{ matrix.dist }} to PyPI
         if: ${{ env.PYPI_API_TOKEN != '' }}
         env:
           TWINE_USERNAME: __token__
@@ -105,14 +86,19 @@ PY
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.meta.outputs.dist }}-${{ steps.meta.outputs.version }}
+          name: ${{ matrix.dist }}-${{ steps.meta.outputs.version }}
           path: ${{ steps.meta.outputs.package_dir }}/dist/*
 
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ steps.meta.outputs.dist }} ${{ steps.meta.outputs.version }}
-          files: ${{ steps.meta.outputs.package_dir }}/dist/*
+          name: "Release ${{ github.ref_name }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
