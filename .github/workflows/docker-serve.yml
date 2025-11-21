@@ -28,7 +28,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/personal-asa-crispdm-serve
+          images: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/personal-asa-crispdm-serve2
 
       - name: Build and push
         uses: docker/build-push-action@v5
