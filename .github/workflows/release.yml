@@ -87,6 +87,12 @@ PY
         working-directory: ${{ steps.meta.outputs.package_dir }}
         run: python -m build
 
+      - name: Publish ${{ steps.meta.outputs.dist }} to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages_dir: ${{ steps.meta.outputs.package_dir }}/dist
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
